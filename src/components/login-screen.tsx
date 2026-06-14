@@ -40,11 +40,15 @@ export function LoginScreen() {
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
-      // iOS / some Android: openAuthSessionAsync successfully intercepted the redirect.
-      // Android fallback: Chrome Custom Tab fires a system Intent → deep link is
-      // handled by the Linking listener in AuthProvider (auth.tsx).
       if (result.type === 'success') {
-        const { error: codeErr } = await supabase.auth.exchangeCodeForSession(result.url);
+        // new URL('sokacti://?code=...') fails in Android's Hermes engine for
+        // custom schemes, so extract the code with regex instead of passing the
+        // full URL — supabase-js skips URL parsing when given a plain code string.
+        const match = result.url.match(/[?&]code=([^&#]+)/);
+        const code = match?.[1];
+        if (!code) throw new Error(`OAuth 回调中未找到授权码\n${result.url}`);
+
+        const { error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
         if (codeErr) throw codeErr;
       }
     } catch (err) {
