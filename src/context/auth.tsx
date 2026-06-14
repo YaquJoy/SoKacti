@@ -1,5 +1,7 @@
 import { Session } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
 
@@ -26,7 +28,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(newSession);
     });
 
-    return () => subscription.unsubscribe();
+    // Android: Chrome Custom Tab fires a system Intent instead of returning to
+    // openAuthSessionAsync, so the PKCE code arrives here via deep link.
+    let linkSub: ReturnType<typeof Linking.addEventListener> | null = null;
+    if (Platform.OS === 'android') {
+      linkSub = Linking.addEventListener('url', ({ url }) => {
+        if (url.startsWith('sokacti://') && url.includes('code=')) {
+          supabase.auth.exchangeCodeForSession(url);
+        }
+      });
+    }
+
+    return () => {
+      subscription.unsubscribe();
+      linkSub?.remove();
+    };
   }, []);
 
   return <AuthContext.Provider value={{ session, loading }}>{children}</AuthContext.Provider>;

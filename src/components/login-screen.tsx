@@ -27,7 +27,9 @@ export function LoginScreen() {
       }
 
       // Mobile: in-app browser session
-      const redirectTo = makeRedirectUri();
+      // Explicitly specify the native scheme so makeRedirectUri returns sokacti://
+      // regardless of whether running in Expo Go or a production build.
+      const redirectTo = makeRedirectUri({ native: 'sokacti://' });
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo, skipBrowserRedirect: true },
@@ -38,8 +40,12 @@ export function LoginScreen() {
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
+      // iOS / some Android: openAuthSessionAsync successfully intercepted the redirect.
+      // Android fallback: Chrome Custom Tab fires a system Intent → deep link is
+      // handled by the Linking listener in AuthProvider (auth.tsx).
       if (result.type === 'success') {
-        await supabase.auth.exchangeCodeForSession(result.url);
+        const { error: codeErr } = await supabase.auth.exchangeCodeForSession(result.url);
+        if (codeErr) throw codeErr;
       }
     } catch (err) {
       Alert.alert('登录失败', err instanceof Error ? err.message : '请稍后重试');
