@@ -41,15 +41,28 @@ export function LoginScreen() {
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
       if (result.type === 'success') {
-        // new URL('sokacti://?code=...') fails in Android's Hermes engine for
-        // custom schemes, so extract the code with regex instead of passing the
-        // full URL — supabase-js skips URL parsing when given a plain code string.
-        const match = result.url.match(/[?&]code=([^&#]+)/);
-        const code = match?.[1];
-        if (!code) throw new Error(`OAuth 回调中未找到授权码\n${result.url}`);
+        const url = result.url;
 
-        const { error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
-        if (codeErr) throw codeErr;
+        // PKCE flow: Supabase returns ?code=... in the query string
+        const codeMatch = url.match(/[?&]code=([^&#]+)/);
+        if (codeMatch?.[1]) {
+          const { error: codeErr } = await supabase.auth.exchangeCodeForSession(codeMatch[1]);
+          if (codeErr) throw codeErr;
+          return;
+        }
+
+        // Implicit flow fallback: Supabase returns #access_token=... in the fragment.
+        // This happens when flowType is not yet 'pkce' on the server side.
+        const fragment = url.includes('#') ? url.split('#')[1] : '';
+        const params = new URLSearchParams(fragment);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        if (!accessToken) throw new Error('OAuth 完成但未收到 token，请重试');
+        const { error: sessionErr } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken ?? '',
+        });
+        if (sessionErr) throw sessionErr;
       }
     } catch (err) {
       Alert.alert('登录失败', err instanceof Error ? err.message : '请稍后重试');
