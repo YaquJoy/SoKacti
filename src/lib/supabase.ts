@@ -2,21 +2,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-// AsyncStorage on web uses window.localStorage, which throws during SSR.
-// This adapter makes all storage ops no-ops in a Node.js / SSR context.
+// On native (Android/iOS) always use AsyncStorage.
+// On web, only skip storage during SSR (Node.js), where window is undefined.
+// RN 0.74+ removed global.window, so typeof window === 'undefined' is true
+// on native too — that's why we check Platform.OS first.
+const isSSR = Platform.OS === 'web' && typeof window === 'undefined';
+
 const ssrSafeStorage = {
-  getItem: (key: string) => {
-    if (typeof window === 'undefined') return Promise.resolve(null);
-    return AsyncStorage.getItem(key);
-  },
-  setItem: (key: string, value: string) => {
-    if (typeof window === 'undefined') return Promise.resolve();
-    return AsyncStorage.setItem(key, value);
-  },
-  removeItem: (key: string) => {
-    if (typeof window === 'undefined') return Promise.resolve();
-    return AsyncStorage.removeItem(key);
-  },
+  getItem: (key: string) =>
+    isSSR ? Promise.resolve(null) : AsyncStorage.getItem(key),
+  setItem: (key: string, value: string) =>
+    isSSR ? Promise.resolve() : AsyncStorage.setItem(key, value),
+  removeItem: (key: string) =>
+    isSSR ? Promise.resolve() : AsyncStorage.removeItem(key),
 };
 
 export const supabase = createClient(
